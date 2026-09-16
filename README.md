@@ -2,6 +2,10 @@
 
 A static Next.js portal for discovering traditional Indian handicrafts.
 
+## Live Site
+
+- https://indian-handicrafts-portal.pages.dev
+
 ## Features
 
 - Browse and discover various Indian handicrafts
