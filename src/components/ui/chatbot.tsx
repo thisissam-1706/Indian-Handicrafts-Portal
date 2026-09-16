@@ -1,6 +1,8 @@
 "use client";
+
 import { Fragment, ReactNode, useEffect, useState } from "react";
-import { chatbotSeed, languageLabels } from "@/data/crafts";
+import { chatbotSeed, crafts, languageLabels } from "@/data/crafts";
+import { searchCrafts } from "@/lib/static-search";
 import SectionHeading from "@/components/ui/section-heading";
 
 type ChatSource = {
@@ -17,40 +19,12 @@ type ChatMessage = {
   sources?: ChatSource[];
 };
 
-type GIPreference = "any" | "gi" | "non-gi";
-
-type AppliedFilters = {
-  states: string[];
-  categories: string[];
-  materials: string[];
-  techniques: string[];
-  giPreference: GIPreference;
-};
-
-type ChatApiResponse = {
-  reply: string;
-  sources?: ChatSource[];
-  appliedFilters?: AppliedFilters;
-};
-
 type StoredChatState = {
-  conversationId: string;
   messages: ChatMessage[];
-  lastAppliedFilters: AppliedFilters | null;
   updatedAt: number;
 };
 
-type ChatHistoryResponse = {
-  conversationId: string;
-  messages: ChatMessage[];
-  lastAppliedFilters: AppliedFilters | null;
-};
-
 const CHAT_STORAGE_KEY = "ihp-chatbot-recent-v1";
-
-function createConversationId(): string {
-  return `chat-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-}
 
 function isValidRole(role: unknown): role is ChatMessage["role"] {
   return role === "assistant" || role === "user";
@@ -132,6 +106,77 @@ function renderMessageText(text: string): ReactNode {
   );
 }
 
+function buildLocalReply(message: string, selectedState: string): { text: string; sources: ChatSource[] } {
+  const trimmed = message.trim();
+  const lower = trimmed.toLowerCase();
+
+  if (/\b(hi|hello|hey|namaste)\b/.test(lower)) {
+    return {
+      text: "Hello! Ask me about a state, category, material, or technique and I will suggest matching crafts from this static catalog.",
+      sources: [],
+    };
+  }
+
+  if (/\b(thanks|thank you)\b/.test(lower)) {
+    return {
+      text: "Happy to help. You can ask things like: GI crafts in Kerala, wood crafts in Karnataka, or Banaras crafts.",
+      sources: [],
+    };
+  }
+
+  let baseResults = searchCrafts(trimmed, crafts, 12);
+  if (selectedState !== "All") {
+    baseResults = baseResults.filter((craft) => craft.state === selectedState);
+  }
+
+  if (/\bgi\b|geographical indication/.test(lower)) {
+    const giOnly = baseResults.filter((craft) => craft.gi);
+    if (giOnly.length > 0) {
+      const text = [
+        `I found ${giOnly.length} GI-focused match${giOnly.length > 1 ? "es" : ""}:`,
+        ...giOnly.slice(0, 5).map((craft, index) => `${index + 1}. ${craft.name} (${craft.state}) - [Open craft page](/detail?id=${craft.id})`),
+      ].join("\n");
+      return {
+        text,
+        sources: giOnly.slice(0, 5).map((craft) => ({
+          id: craft.id,
+          name: craft.name,
+          state: craft.state,
+          category: craft.category,
+          gi: craft.gi,
+        })),
+      };
+    }
+  }
+
+  if (baseResults.length === 0) {
+    return {
+      text: "I could not find a close match. Try mentioning a state, craft name, material, or technique (for example: Rajasthan block printing, Kerala coir, metal casting).",
+      sources: [],
+    };
+  }
+
+  const shortlist = baseResults.slice(0, 5);
+  const text = [
+    `I found ${shortlist.length} relevant craft suggestion${shortlist.length > 1 ? "s" : ""}:`,
+    ...shortlist.map(
+      (craft, index) =>
+        `${index + 1}. ${craft.name} (${craft.state}) | ${craft.category} | ${craft.material} | ${craft.technique} - [Open craft page](/detail?id=${craft.id})`
+    ),
+  ].join("\n");
+
+  return {
+    text,
+    sources: shortlist.map((craft) => ({
+      id: craft.id,
+      name: craft.name,
+      state: craft.state,
+      category: craft.category,
+      gi: craft.gi,
+    })),
+  };
+}
+
 export default function Chatbot({
   language,
   selectedState,
@@ -144,8 +189,6 @@ export default function Chatbot({
   const [isLoading, setIsLoading] = useState(false);
   const [isClearing, setIsClearing] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
-  const [lastAppliedFilters, setLastAppliedFilters] = useState<AppliedFilters | null>(null);
-  const [conversationId, setConversationId] = useState<string>(() => createConversationId());
 
   useEffect(() => {
     try {
@@ -158,12 +201,6 @@ export default function Chatbot({
       if (restoredMessages.length > 0) {
         setMessages(restoredMessages.slice(-24));
       }
-
-      if (parsed.conversationId && typeof parsed.conversationId === "string") {
-        setConversationId(parsed.conversationId);
-      }
-
-      setLastAppliedFilters((parsed.lastAppliedFilters as AppliedFilters | null) || null);
     } catch (error) {
       console.warn("Failed to restore chatbot history", error);
     } finally {
@@ -174,153 +211,57 @@ export default function Chatbot({
   useEffect(() => {
     if (!isHydrated) return;
 
-    const controller = new AbortController();
-    const loadServerHistory = async () => {
-      try {
-        const response = await fetch(
-          `/api/chat/history?conversationId=${encodeURIComponent(conversationId)}`,
-          { method: "GET", signal: controller.signal }
-        );
-
-        if (!response.ok) return;
-
-        const payload = (await response.json()) as ChatHistoryResponse;
-        const serverMessages = sanitizeStoredMessages(payload.messages);
-
-        if (serverMessages.length > 0) {
-          setMessages(serverMessages.slice(-24));
-        }
-
-        if (payload.conversationId && payload.conversationId !== conversationId) {
-          setConversationId(payload.conversationId);
-        }
-
-        if (payload.lastAppliedFilters) {
-          setLastAppliedFilters(payload.lastAppliedFilters);
-        }
-      } catch (error) {
-        if ((error as { name?: string })?.name !== "AbortError") {
-          console.warn("Failed to load server chat history", error);
-        }
-      }
-    };
-
-    void loadServerHistory();
-
-    return () => controller.abort();
-  }, [conversationId, isHydrated]);
-
-  useEffect(() => {
-    if (!isHydrated) return;
-
     try {
       const payload: StoredChatState = {
-        conversationId,
         messages: messages.slice(-24),
-        lastAppliedFilters,
         updatedAt: Date.now(),
       };
       window.localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(payload));
     } catch (error) {
       console.warn("Failed to persist chatbot history", error);
     }
-  }, [conversationId, isHydrated, messages, lastAppliedFilters]);
+  }, [isHydrated, messages]);
 
-  useEffect(() => {
-    if (!isHydrated) return;
-
-    const persistServerHistory = async () => {
-      try {
-        await fetch("/api/chat/history", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            conversationId,
-            messages: messages.slice(-24),
-            lastAppliedFilters,
-          }),
-        });
-      } catch (error) {
-        console.warn("Failed to persist server chat history", error);
-      }
-    };
-
-    void persistServerHistory();
-  }, [conversationId, isHydrated, messages, lastAppliedFilters]);
-
-  const clearChat = async () => {
+  const clearChat = () => {
     if (isLoading || isClearing) return;
 
     setIsClearing(true);
-    const previousConversationId = conversationId;
-    const nextConversationId = createConversationId();
-
     try {
-      await fetch(`/api/chat/history?conversationId=${encodeURIComponent(previousConversationId)}`, {
-        method: "DELETE",
-      });
+      window.localStorage.removeItem(CHAT_STORAGE_KEY);
     } catch (error) {
-      console.warn("Failed to clear server chat history", error);
+      console.warn("Failed to clear local chat history", error);
     } finally {
       setMessages(chatbotSeed);
-      setLastAppliedFilters(null);
       setInput("");
-      setConversationId(nextConversationId);
-
-      try {
-        window.localStorage.removeItem(CHAT_STORAGE_KEY);
-      } catch (error) {
-        console.warn("Failed to clear local chat history", error);
-      }
-
       setIsClearing(false);
     }
   };
-  
+
   const send = async () => {
     if (!input.trim() || isLoading || isClearing) return;
     const userText = input.trim();
-    const nextHistory = [...messages, { role: "user" as const, text: userText }];
+
     setMessages((prev) => [...prev, { role: "user", text: userText }]);
     setInput("");
 
     setIsLoading(true);
     try {
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: userText,
-          selectedState,
-          language,
-          contextFilters: lastAppliedFilters,
-          history: nextHistory.slice(-10).map((msg) => ({ role: msg.role, text: msg.text })),
-          conversationId,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to get chatbot response");
-      }
-
-      const data = (await response.json()) as ChatApiResponse;
-      setLastAppliedFilters(data.appliedFilters || null);
-
+      const data = buildLocalReply(userText, selectedState);
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          text: data.reply,
-          sources: data.sources || [],
+          text: data.text,
+          sources: data.sources,
         },
       ]);
     } catch (error) {
-      console.error("Chat request failed:", error);
+      console.error("Chat response failed:", error);
       setMessages((prev) => [
         ...prev,
         {
           role: "assistant",
-          text: "I could not reach the chat service right now. Please try again in a moment.",
+          text: "I could not process that right now. Please try again.",
         },
       ]);
     } finally {
@@ -334,23 +275,20 @@ export default function Chatbot({
         title="Chat with our Assistant"
         subtitle="Ask questions about handicrafts and get basic guidance."
       />
-      
+
       <div style={{ display: "flex", flexWrap: "wrap", gap: "20px" }}>
-        {/* Left side: Info box */}
         <div style={{ flex: "1 1 250px", border: "1px solid #ceb8a2", padding: "15px", height: "fit-content", borderRadius: "14px", background: "#fffaf3", boxShadow: "0 10px 24px rgba(86, 58, 36, 0.07)" }}>
           <h3 style={{ fontSize: "1.2rem", fontWeight: 700, borderBottom: "1px solid #dbc8b5", marginBottom: "10px", marginTop: 0, color: "#2f2116" }}>
             Chatbot Help
           </h3>
-          {/* <p style={{ fontSize: "0.8rem", color: "grey" }}>Basic frontend demo</p> */}
           <ul style={{ paddingLeft: "20px", fontSize: "0.9rem", lineHeight: "1.7", color: "#4e3d30" }}>
-            <li>Testing natural language input</li>
-            <li>Multilingual support check</li>
-            <li>Chat UI presentation</li>
-            <li>Suggested craft discovery queries</li>
+            <li>Runs fully in your browser (no backend required)</li>
+            <li>Searches the current static craft catalog</li>
+            <li>Supports GI and state-oriented prompts</li>
+            <li>Stores recent chat locally in this browser</li>
           </ul>
         </div>
 
-        {/* Right side: Chatbot */}
         <div style={{ flex: "2 1 400px", border: "1px solid #ceb8a2", display: "flex", flexDirection: "column", borderRadius: "14px", overflow: "hidden", background: "#fffaf4", boxShadow: "0 12px 28px rgba(89, 61, 39, 0.08)" }}>
           <div style={{ borderBottom: "1px solid #dbc8b5", padding: "12px", background: "linear-gradient(135deg, #f4e3cf 0%, #edd5be 100%)" }}>
             <div style={{ fontWeight: 700, color: "#3d2a1c" }}>Assistant Shell</div>
@@ -376,11 +314,11 @@ export default function Chatbot({
               </button>
             </div>
           </div>
-          
+
           <div style={{ height: "400px", overflowY: "scroll", padding: "15px", background: "#fffdf9" }}>
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               {messages.map((msg, idx) => (
-                <div key={idx} style={{ 
+                <div key={idx} style={{
                   alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
                   maxWidth: "80%",
                   padding: "9px 12px",
@@ -448,7 +386,7 @@ export default function Chatbot({
               disabled={isLoading || isClearing}
               style={{ flex: 1, padding: "10px", border: "1px solid #c9b09a", borderRadius: "10px", background: "#fffdf9", color: "#3d2a1d" }}
             />
-            <button 
+            <button
               onClick={send}
               disabled={isLoading || isClearing}
               style={{ padding: "10px 15px", border: "1px solid #935034", borderRadius: "10px", cursor: "pointer", background: "#9e4f2f", color: "#fff9f2", fontWeight: 700 }}

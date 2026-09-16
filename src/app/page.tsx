@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { languageLabels } from "@/data/crafts";
+import { crafts, languageLabels } from "@/data/crafts";
 import { Craft } from "@/lib/types";
+import { searchCrafts } from "@/lib/static-search";
 import TopNav from "@/components/ui/top-nav";
 import Hero from "@/components/ui/hero";
 import Footer from "@/components/ui/footer";
@@ -34,23 +35,19 @@ export default function HomePage() {
       setSearchError("");
 
       try {
-        const response = await fetch(`/api/search?q=${encodeURIComponent(trimmed)}`, {
-          signal: controller.signal,
-        });
-
-        if (!response.ok) {
-          throw new Error("Search request failed");
+        if (controller.signal.aborted) {
+          return;
         }
 
-        const data = (await response.json()) as SearchResultCraft[];
-        setSearchResults(Array.isArray(data) ? data : []);
+        const data = searchCrafts(trimmed, crafts, 50) as SearchResultCraft[];
+        setSearchResults(data);
       } catch (error) {
         if ((error as Error).name === "AbortError") {
           return;
         }
-        console.error("Search failed:", error);
+        console.error("Local search failed:", error);
         setSearchResults([]);
-        setSearchError("Unable to fetch search results right now. Please try again.");
+        setSearchError("Unable to search right now. Please try again.");
       } finally {
         setIsSearching(false);
       }
@@ -65,7 +62,7 @@ export default function HomePage() {
   return (
     <div className="min-h-screen flex flex-col text-[var(--foreground)]" style={{ padding: "0 20px" }}>
       <div style={{ marginTop: "20px" }}>
-        <TopNav language={language} setLanguage={setLanguage as any} />
+        <TopNav language={language} setLanguage={setLanguage} />
       </div>
       <main className="flex-1 flex flex-col justify-center">
         <Hero

@@ -2,12 +2,30 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { states, filters } from "@/data/crafts";
+import { crafts, filters, states } from "@/data/crafts";
+import { Craft } from "@/lib/types";
+import { findBestDuplicate } from "@/lib/static-search";
 import SearchableDropdown from "./searchable-dropdown";
 
 const CATEGORIES = filters.category.filter(c => c !== "All");
 const MATERIALS = filters.material.filter(m => m !== "All");
 const TECHNIQUES = filters.technique.filter(t => t !== "All");
+const LOCAL_CRAFTS_KEY = "ihp-custom-crafts-v1";
+
+function loadLocalCrafts(): Craft[] {
+  try {
+    const raw = window.localStorage.getItem(LOCAL_CRAFTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as Craft[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveLocalCrafts(allCrafts: Craft[]) {
+  window.localStorage.setItem(LOCAL_CRAFTS_KEY, JSON.stringify(allCrafts));
+}
 
 export default function AddCraftWizard() {
   const router = useRouter();
@@ -39,12 +57,18 @@ export default function AddCraftWizard() {
   const performDuplicateCheck = async () => {
     setIsScanning(true);
     try {
-      const response = await fetch("/api/crafts/duplicate-check", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
-      const data = await response.json();
+      const existing = [...crafts, ...loadLocalCrafts()];
+      const data = findBestDuplicate(
+        {
+          name: formData.name,
+          state: formData.state,
+          summary: formData.summary,
+          category: formData.category,
+          material: formData.material,
+          technique: formData.technique,
+        },
+        existing
+      );
       setSimilarityResult(data);
     } catch (error) {
       console.error("Duplicate check failed");
@@ -67,19 +91,31 @@ export default function AddCraftWizard() {
     
     setIsSubmitting(true);
     try {
-      const response = await fetch("/api/crafts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
+      const localCrafts = loadLocalCrafts();
+      const nextId = Math.max(...crafts.map((c) => c.id), ...localCrafts.map((c) => c.id), 0) + 1;
 
-      if (response.ok) {
-        alert("Craft registered successfully!");
-        router.push("/crafts");
-      } else {
-        const err = await response.json();
-        alert("Error: " + err.error);
-      }
+      const newCraft: Craft = {
+        id: nextId,
+        name: formData.name,
+        state: formData.state,
+        district: "",
+        category: formData.category || "Craft",
+        material: formData.material || "Traditional",
+        technique: formData.technique || "Traditional",
+        gi: formData.gi,
+        artisan: formData.artisan,
+        language: formData.language,
+        summary: formData.summary,
+        history: formData.history || formData.summary,
+        authenticity: "Submitted by community contributor",
+        image:
+          formData.image ||
+          "https://images.unsplash.com/photo-1578301978162-7aae4d755744?q=80&w=1200&auto=format&fit=crop",
+      };
+
+      saveLocalCrafts([...localCrafts, newCraft]);
+      alert("Craft saved locally for this browser session profile.");
+      router.push("/crafts");
     } catch (error) {
       alert("Something went wrong!");
     } finally {

@@ -12,7 +12,7 @@ export default function AddCraftPage() {
 
   return (
     <div className="min-h-screen text-[var(--foreground)]">
-      <TopNav language={language} setLanguage={setLanguage as any} />
+      <TopNav language={language} setLanguage={setLanguage} />
       
       <main style={{ padding: "60px 24px", background: "linear-gradient(to bottom, #fffaf3, #f7eed9)" }}>
         <SectionHeading 

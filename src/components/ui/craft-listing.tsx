@@ -91,7 +91,12 @@ export default function CraftListing({
           }}>
             {filtered.map((craft) => (
               <div key={craft.id}>
-                <CraftCard craft={craft} onOpen={() => openCraft(craft.id)} />
+                <CraftCard
+                  craft={craft}
+                  categoryTag={getNormalizedTag("category", craft.category)}
+                  techniqueTag={getNormalizedTag("technique", craft.technique)}
+                  onOpen={() => openCraft(craft.id)}
+                />
               </div>
             ))}
           </div>

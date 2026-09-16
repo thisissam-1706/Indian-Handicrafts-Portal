@@ -1,7 +1,6 @@
-# Indian Handicrafts Portal NLP
+# Indian Handicrafts Portal
 
-
-A modern web application showcasing and exploring traditional Indian handicrafts. Built with Next.js and React.
+A static Next.js portal for discovering traditional Indian handicrafts.
 
 ## Features
 
@@ -10,7 +9,8 @@ A modern web application showcasing and exploring traditional Indian handicrafts
 - Interactive state-based filtering
 - Responsive design with Tailwind CSS
 - Modern UI components with Radix UI
-- AI-powered chatbot assistance with deterministic filters + retrieval grounding
+- In-browser chatbot guidance (no backend required)
+- Community craft submission stored in browser local storage
 
 ## Tech Stack
 
@@ -21,7 +21,7 @@ A modern web application showcasing and exploring traditional Indian handicrafts
 - **Animations**: Framer Motion
 - **Language**: TypeScript
 - **Linting**: ESLint
-- **NLP**: Hybrid retrieval (TF-IDF + embeddings via Xenova Transformers)
+- **Deployment**: Static export (`out/`) for free hosting on Cloudflare Pages
 
 ## Getting Started
 
@@ -43,13 +43,7 @@ cd Indian-Handicrafts-Portal
 npm install
 ```
 
-3. Set up environment variables:
-```bash
-cp .env.example .env.local
-# Edit .env.local with your configuration
-```
-
-4. Run the development server:
+3. Run the development server:
 ```bash
 npm run dev
 ```
@@ -59,9 +53,34 @@ Open [http://localhost:3000](http://localhost:3000) in your browser to see the a
 ## Available Scripts
 
 - `npm run dev` - Start development server
-- `npm run build` - Build for production
+- `npm run build` - Build and export static files to `out/`
 - `npm start` - Start production server
 - `npm run lint` - Run ESLint
+
+## Static Deployment (Cloudflare Pages)
+
+This project is configured for static export in `next.config.ts`.
+
+1. Build command:
+```bash
+npm run build
+```
+
+2. Output directory:
+```bash
+out
+```
+
+3. Cloudflare Pages settings:
+- Framework preset: `Next.js (Static HTML Export)` or `None`
+- Build command: `npm run build`
+- Build output directory: `out`
+- Node version: `20` (recommended)
+
+4. Optional local static preview:
+```bash
+npx serve out
+```
 
 ## Project Structure
 

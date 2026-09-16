@@ -1,12 +1,16 @@
 "use client";
 import Link from "next/link";
+import type { Dispatch, SetStateAction } from "react";
+import { languageLabels } from "@/data/crafts";
+
+type LanguageKey = keyof typeof languageLabels;
 
 export default function TopNav({
   language,
   setLanguage,
 }: {
-  language: string;
-  setLanguage: (value: string) => void;
+  language: LanguageKey;
+  setLanguage: Dispatch<SetStateAction<LanguageKey>>;
 }) {
   const links = [
     ["/", "Home"],
@@ -42,7 +46,7 @@ export default function TopNav({
 
       <div style={{ color: "#4a3b2f", fontSize: "0.9rem", fontWeight: 600 }}>
         Language: 
-        <select value={language} onChange={(e) => setLanguage(e.target.value)} style={{ marginLeft: "8px", border: "1px solid #ccb8a3", background: "#fffdf9", color: "#3a2a1e", padding: "6px 10px", borderRadius: "8px" }}>
+        <select value={language} onChange={(e) => setLanguage(e.target.value as LanguageKey)} style={{ marginLeft: "8px", border: "1px solid #ccb8a3", background: "#fffdf9", color: "#3a2a1e", padding: "6px 10px", borderRadius: "8px" }}>
           <option value="English">EN</option>
           <option value="Hindi">HI</option>
           <option value="Telugu">TE</option>
